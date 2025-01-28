@@ -98,6 +98,7 @@ export default function PrivatePage() {
   // This contains ids for built-in "Use Credits for X" credentials
   const hiddenCredentials = useMemo(
     () => [
+      "744fdc56-071a-4761-b5a5-0af0ce10a2b5", // Ollama
       "fdb7f412-f519-48d1-9b5f-d2f73d0e01fe", // Revid
       "760f84fc-b270-42de-91f6-08efe1b512d0", // Ideogram
       "6b9fc200-4726-4973-86c9-cd526f5ce5db", // Replicate
@@ -123,14 +124,22 @@ export default function PrivatePage() {
 
   const allCredentials = providers
     ? Object.values(providers).flatMap((provider) =>
-        [...provider.savedOAuthCredentials, ...provider.savedApiKeys]
+        [
+          ...provider.savedOAuthCredentials,
+          ...provider.savedApiKeys,
+          ...provider.savedUserPasswordCredentials,
+        ]
           .filter((cred) => !hiddenCredentials.includes(cred.id))
           .map((credentials) => ({
             ...credentials,
             provider: provider.provider,
             providerName: provider.providerName,
             ProviderIcon: providerIcons[provider.provider],
-            TypeIcon: { oauth2: IconUser, api_key: IconKey }[credentials.type],
+            TypeIcon: {
+              oauth2: IconUser,
+              api_key: IconKey,
+              user_password: IconKey,
+            }[credentials.type],
           })),
       )
     : [];
@@ -175,6 +184,7 @@ export default function PrivatePage() {
                     {
                       oauth2: "OAuth2 credentials",
                       api_key: "API key",
+                      user_password: "User password",
                     }[cred.type]
                   }{" "}
                   - <code>{cred.id}</code>

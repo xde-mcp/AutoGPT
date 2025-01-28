@@ -57,7 +57,6 @@ class SetGraphActiveVersion(pydantic.BaseModel):
 class UpdatePermissionsRequest(pydantic.BaseModel):
     permissions: List[APIKeyPermission]
 
-
 class Pagination(pydantic.BaseModel):
     total_items: int = pydantic.Field(
         description="Total number of items.", examples=[42]
@@ -71,3 +70,7 @@ class Pagination(pydantic.BaseModel):
     page_size: int = pydantic.Field(
         description="Number of items per page.", examples=[25]
     )
+
+class RequestTopUp(pydantic.BaseModel):
+    amount: int
+    """Amount of credits to top up."""
