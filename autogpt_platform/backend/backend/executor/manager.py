@@ -803,6 +803,7 @@ class ExecutionManager(AppService):
         data: BlockInput,
         user_id: str,
         graph_version: Optional[int] = None,
+        preset_id: Optional[str] = None,
     ) -> GraphExecutionEntry:
         graph: GraphModel | None = self.db_client.get_graph(
             graph_id=graph_id, user_id=user_id, version=graph_version
