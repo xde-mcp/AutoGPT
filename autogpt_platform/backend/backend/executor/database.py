@@ -22,6 +22,7 @@ from backend.data.user import (
     get_user_metadata,
     update_user_integrations,
     update_user_metadata,
+    get_active_users_in_timerange,
 )
 from backend.util.service import AppService, expose, register_pydantic_serializers
 from backend.util.settings import Config
@@ -89,3 +90,6 @@ class DatabaseManager(AppService):
     update_user_metadata = exposed_run_and_wait(update_user_metadata)
     get_user_integrations = exposed_run_and_wait(get_user_integrations)
     update_user_integrations = exposed_run_and_wait(update_user_integrations)
+
+    # Notifications
+    get_active_users_in_timerange = exposed_run_and_wait(get_active_users_in_timerange)
