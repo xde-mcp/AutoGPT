@@ -15,6 +15,7 @@ from backend.data.execution import (
     update_node_execution_stats,
     upsert_execution_input,
     upsert_execution_output,
+    get_executions_in_timerange,
 )
 from backend.data.graph import get_graph, get_node
 from backend.data.user import (
@@ -93,3 +94,4 @@ class DatabaseManager(AppService):
 
     # Notifications
     get_active_users_in_timerange = exposed_run_and_wait(get_active_users_in_timerange)
+    get_executions_in_timerange = exposed_run_and_wait(get_executions_in_timerange)
