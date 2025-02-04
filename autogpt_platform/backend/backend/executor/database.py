@@ -8,6 +8,7 @@ from backend.data.execution import (
     RedisExecutionEventBus,
     create_graph_execution,
     get_execution_results,
+    get_executions_in_timerange,
     get_incomplete_executions,
     get_latest_execution,
     update_execution_status,
@@ -15,15 +16,14 @@ from backend.data.execution import (
     update_node_execution_stats,
     upsert_execution_input,
     upsert_execution_output,
-    get_executions_in_timerange,
 )
 from backend.data.graph import get_graph, get_node
 from backend.data.user import (
+    get_active_users_in_timerange,
     get_user_integrations,
     get_user_metadata,
     update_user_integrations,
     update_user_metadata,
-    get_active_users_in_timerange,
 )
 from backend.util.service import AppService, expose, register_pydantic_serializers
 from backend.util.settings import Config
