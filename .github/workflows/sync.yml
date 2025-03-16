@@ -25,5 +25,5 @@ jobs:
         run: |
           git remote add upstream https://github.com/Significant-Gravitas/AutoGPT.git
           git fetch upstream
-          git merge upstream/main  # 或者 upstream/master，取决于原始仓库的主分支
-          git push origin main
+          git merge upstream/master  # 或者 upstream/master，取决于原始仓库的主分支
+          git push origin master
