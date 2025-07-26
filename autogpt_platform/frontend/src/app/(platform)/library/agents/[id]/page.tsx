@@ -1,5 +1,6 @@
 "use client";
 import { useParams, useRouter } from "next/navigation";
+import { useQueryState } from "nuqs";
 import React, {
   useCallback,
   useEffect,
@@ -41,10 +42,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import LoadingBox, { LoadingSpinner } from "@/components/ui/loading";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/components/molecules/Toast/use-toast";
 
 export default function AgentRunsPage(): React.ReactElement {
   const { id: agentID }: { id: LibraryAgentID } = useParams();
+  const [executionId, setExecutionId] = useQueryState("executionId");
   const { toast } = useToast();
   const router = useRouter();
   const api = useBackendAPI();
@@ -201,6 +203,13 @@ export default function AgentRunsPage(): React.ReactElement {
     selectRun,
     selectPreset,
   ]);
+
+  useEffect(() => {
+    if (executionId) {
+      selectRun(executionId as GraphExecutionID);
+      setExecutionId(null);
+    }
+  }, [executionId, selectRun, setExecutionId]);
 
   // Initial load
   useEffect(() => {
@@ -468,7 +477,7 @@ export default function AgentRunsPage(): React.ReactElement {
   }
 
   return (
-    <div className="container justify-stretch p-0 lg:flex">
+    <div className="container justify-stretch p-0 pt-16 lg:flex">
       {/* Sidebar w/ list of runs */}
       {/* TODO: render this below header in sm and md layouts */}
       <AgentRunsSelectorList
@@ -512,7 +521,8 @@ export default function AgentRunsPage(): React.ReactElement {
         ) : selectedView.type == "run" ? (
           /* Draft new runs / Create new presets */
           <AgentRunDraftView
-            agent={agent}
+            graph={graph}
+            triggerSetupInfo={agent.trigger_setup_info}
             onRun={selectRun}
             onCreateSchedule={onCreateSchedule}
             onCreatePreset={onCreatePreset}
@@ -521,7 +531,8 @@ export default function AgentRunsPage(): React.ReactElement {
         ) : selectedView.type == "preset" ? (
           /* Edit & update presets */
           <AgentRunDraftView
-            agent={agent}
+            graph={graph}
+            triggerSetupInfo={agent.trigger_setup_info}
             agentPreset={
               agentPresets.find((preset) => preset.id == selectedView.id)!
             }

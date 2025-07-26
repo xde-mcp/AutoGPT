@@ -14,7 +14,7 @@ from backend.data.block import (
     get_block,
 )
 from backend.data.execution import ExecutionStatus
-from backend.data.model import SchemaField
+from backend.data.model import NodeExecutionStats, SchemaField
 from backend.util import json, retry
 
 _logger = logging.getLogger(__name__)
@@ -74,7 +74,6 @@ class AgentExecutorBlock(Block):
             user_id=input_data.user_id,
             inputs=input_data.inputs,
             nodes_input_masks=input_data.nodes_input_masks,
-            use_db_query=False,
         )
 
         logger = execution_utils.LogMetadata(
@@ -151,6 +150,12 @@ class AgentExecutorBlock(Block):
             if event.event_type == ExecutionEventType.GRAPH_EXEC_UPDATE:
                 # If the graph execution is COMPLETED, TERMINATED, or FAILED,
                 # we can stop listening for further events.
+                self.merge_stats(
+                    NodeExecutionStats(
+                        extra_cost=event.stats.cost if event.stats else 0,
+                        extra_steps=event.stats.node_exec_count if event.stats else 0,
+                    )
+                )
                 break
 
             logger.debug(
@@ -192,7 +197,6 @@ class AgentExecutorBlock(Block):
             await execution_utils.stop_graph_execution(
                 graph_exec_id=graph_exec_id,
                 user_id=user_id,
-                use_db_query=False,
             )
             logger.info(f"Execution {log_id} stopped successfully.")
         except Exception as e:

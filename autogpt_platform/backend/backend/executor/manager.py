@@ -207,9 +207,7 @@ async def execute_node(
 
         # Update execution stats
         if execution_stats is not None:
-            execution_stats = execution_stats.model_copy(
-                update=node_block.execution_stats.model_dump()
-            )
+            execution_stats += node_block.execution_stats
             execution_stats.input_size = input_size
             execution_stats.output_size = output_size
 
@@ -648,9 +646,10 @@ class Executor:
                 return
 
             nonlocal execution_stats
-            execution_stats.node_count += 1
+            execution_stats.node_count += 1 + result.extra_steps
             execution_stats.nodes_cputime += result.cputime
             execution_stats.nodes_walltime += result.walltime
+            execution_stats.cost += result.extra_cost
             if (err := result.error) and isinstance(err, Exception):
                 execution_stats.node_error_count += 1
                 update_node_execution_status(
@@ -784,11 +783,13 @@ class Executor:
 
                         # node evaluation future -----------------
                         if inflight_eval := running_node_evaluation.get(node_id):
-                            try:
-                                inflight_eval.result()
-                                running_node_evaluation.pop(node_id)
-                            except TimeoutError:
+                            if not inflight_eval.done():
                                 continue
+                            try:
+                                inflight_eval.result(timeout=0)
+                                running_node_evaluation.pop(node_id)
+                            except Exception as e:
+                                log_metadata.error(f"Node eval #{node_id} failed: {e}")
 
                         # node execution future ---------------------------
                         if inflight_exec.is_done():
@@ -877,6 +878,7 @@ class Executor:
                         ExecutionStatus.QUEUED,
                         ExecutionStatus.RUNNING,
                     ],
+                    include_exec_data=False,
                 )
                 db_client.update_node_execution_status_batch(
                     [node_exec.node_exec_id for node_exec in inflight_executions],
