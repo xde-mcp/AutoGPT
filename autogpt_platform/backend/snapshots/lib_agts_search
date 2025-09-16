@@ -15,6 +15,10 @@
         "type": "object",
         "properties": {}
       },
+      "output_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "credentials_input_schema": {
         "type": "object",
         "properties": {}
@@ -23,7 +27,8 @@
       "trigger_setup_info": null,
       "new_output": false,
       "can_access_graph": true,
-      "is_latest_version": true
+      "is_latest_version": true,
+      "recommended_schedule_cron": null
     },
     {
       "id": "test-agent-2",
@@ -40,6 +45,10 @@
         "type": "object",
         "properties": {}
       },
+      "output_schema": {
+        "type": "object",
+        "properties": {}
+      },
       "credentials_input_schema": {
         "type": "object",
         "properties": {}
@@ -48,7 +57,8 @@
       "trigger_setup_info": null,
       "new_output": false,
       "can_access_graph": false,
-      "is_latest_version": true
+      "is_latest_version": true,
+      "recommended_schedule_cron": null
     }
   ],
   "pagination": {

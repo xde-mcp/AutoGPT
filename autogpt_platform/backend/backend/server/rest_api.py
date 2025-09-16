@@ -3,17 +3,13 @@ import logging
 from enum import Enum
 from typing import Any, Optional
 
-import autogpt_libs.auth.models
 import fastapi
 import fastapi.responses
 import pydantic
 import starlette.middleware.cors
 import uvicorn
-from autogpt_libs.feature_flag.client import (
-    initialize_launchdarkly,
-    shutdown_launchdarkly,
-)
-from autogpt_libs.logging.utils import generate_uvicorn_config
+from autogpt_libs.auth import add_auth_responses_to_openapi
+from autogpt_libs.auth import verify_settings as verify_auth_settings
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 
@@ -25,6 +21,8 @@ import backend.server.routers.postmark.postmark
 import backend.server.routers.v1
 import backend.server.v2.admin.credit_admin_routes
 import backend.server.v2.admin.store_admin_routes
+import backend.server.v2.builder
+import backend.server.v2.builder.routes
 import backend.server.v2.library.db
 import backend.server.v2.library.model
 import backend.server.v2.library.routes
@@ -41,6 +39,7 @@ from backend.server.external.api import external_app
 from backend.server.middleware.security import SecurityHeadersMiddleware
 from backend.util import json
 from backend.util.cloud_storage import shutdown_cloud_storage_handler
+from backend.util.feature_flag import initialize_launchdarkly, shutdown_launchdarkly
 from backend.util.service import UnhealthyServiceError
 
 settings = backend.util.settings.Settings()
@@ -63,6 +62,8 @@ def launch_darkly_context():
 
 @contextlib.asynccontextmanager
 async def lifespan_context(app: fastapi.FastAPI):
+    verify_auth_settings()
+
     await backend.data.db.connect()
 
     # Ensure SDK auto-registration is patched before initializing blocks
@@ -133,6 +134,9 @@ app = fastapi.FastAPI(
 
 app.add_middleware(SecurityHeadersMiddleware)
 
+# Add 401 responses to authenticated endpoints in OpenAPI spec
+add_auth_responses_to_openapi(app)
+
 
 def handle_internal_http_error(status_code: int = 500, log_error: bool = True):
     def handler(request: fastapi.Request, exc: Exception):
@@ -200,6 +204,9 @@ app.include_router(
     backend.server.v2.store.routes.router, tags=["v2"], prefix="/api/store"
 )
 app.include_router(
+    backend.server.v2.builder.routes.router, tags=["v2"], prefix="/api/builder"
+)
+app.include_router(
     backend.server.v2.admin.store_admin_routes.router,
     tags=["v2", "admin"],
     prefix="/api/store",
@@ -250,7 +257,7 @@ class AgentServer(backend.util.service.AppProcess):
             server_app,
             host=backend.util.settings.Config().agent_api_host,
             port=backend.util.settings.Config().agent_api_port,
-            log_config=generate_uvicorn_config(),
+            log_config=None,
         )
 
     def cleanup(self):
@@ -356,6 +363,7 @@ class AgentServer(backend.util.service.AppProcess):
             preset_id=preset_id,
             user_id=user_id,
             inputs=inputs or {},
+            credential_inputs={},
         )
 
     @staticmethod
@@ -369,10 +377,10 @@ class AgentServer(backend.util.service.AppProcess):
     @staticmethod
     async def test_review_store_listing(
         request: backend.server.v2.store.model.ReviewSubmissionRequest,
-        user: autogpt_libs.auth.models.User,
+        user_id: str,
     ):
         return await backend.server.v2.admin.store_admin_routes.review_submission(
-            request.store_listing_version_id, request, user
+            request.store_listing_version_id, request, user_id
         )
 
     @staticmethod

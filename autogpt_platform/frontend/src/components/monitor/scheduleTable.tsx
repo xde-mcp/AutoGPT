@@ -1,4 +1,5 @@
-import { LibraryAgent, Schedule, ScheduleID } from "@/lib/autogpt-server-api";
+import { LibraryAgent } from "@/lib/autogpt-server-api";
+import { GraphExecutionJobInfo } from "@/app/api/__generated__/models/graphExecutionJobInfo";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -14,6 +15,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ClockIcon, Loader2 } from "lucide-react";
 import { useToast } from "@/components/molecules/Toast/use-toast";
 import { humanizeCronExpression } from "@/lib/cron-expression-utils";
+import {
+  formatScheduleTime,
+  getTimezoneAbbreviation,
+} from "@/lib/timezone-utils";
+import { useGetV1GetUserTimezone } from "@/app/api/__generated__/endpoints/auth/auth";
 import {
   Select,
   SelectContent,
@@ -34,12 +40,12 @@ import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 
 interface SchedulesTableProps {
-  schedules: Schedule[];
+  schedules: GraphExecutionJobInfo[];
   agents: LibraryAgent[];
-  onRemoveSchedule: (scheduleId: ScheduleID, enabled: boolean) => void;
-  sortColumn: keyof Schedule;
+  onRemoveSchedule: (scheduleId: string, enabled: boolean) => void;
+  sortColumn: keyof GraphExecutionJobInfo;
   sortDirection: "asc" | "desc";
-  onSort: (column: keyof Schedule) => void;
+  onSort: (column: keyof GraphExecutionJobInfo) => void;
 }
 
 export const SchedulesTable = ({
@@ -59,6 +65,13 @@ export const SchedulesTable = ({
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState<string>(""); // Graph ID
 
+  // Get user's timezone for displaying schedule times
+  const { data: userTimezone } = useGetV1GetUserTimezone({
+    query: {
+      select: (res) => (res.status === 200 ? res.data.timezone : "UTC"),
+    },
+  });
+
   const filteredAndSortedSchedules = [...schedules]
     .filter(
       (schedule) => !selectedFilter || schedule.graph_id === selectedFilter,
@@ -72,7 +85,7 @@ export const SchedulesTable = ({
       return String(bValue).localeCompare(String(aValue));
     });
 
-  const handleToggleSchedule = (scheduleId: ScheduleID, enabled: boolean) => {
+  const handleToggleSchedule = (scheduleId: string, enabled: boolean) => {
     onRemoveSchedule(scheduleId, enabled);
     if (!enabled) {
       toast({
@@ -218,7 +231,7 @@ export const SchedulesTable = ({
               >
                 Schedule
               </TableHead>
-
+              <TableHead>Timezone</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -226,7 +239,7 @@ export const SchedulesTable = ({
             {filteredAndSortedSchedules.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={6}
                   className="py-8 text-center text-lg text-gray-400"
                 >
                   No schedules are available
@@ -241,14 +254,20 @@ export const SchedulesTable = ({
                   </TableCell>
                   <TableCell>{schedule.graph_version}</TableCell>
                   <TableCell>
-                    {schedule.next_run_time.toLocaleString()}
+                    {formatScheduleTime(schedule.next_run_time, userTimezone)}
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary">
                       {humanizeCronExpression(schedule.cron)}
                     </Badge>
                   </TableCell>
-
+                  <TableCell>
+                    <span className="text-sm text-muted-foreground">
+                      {schedule.timezone
+                        ? getTimezoneAbbreviation(schedule.timezone)
+                        : userTimezone && getTimezoneAbbreviation(userTimezone)}
+                    </span>
+                  </TableCell>
                   <TableCell>
                     <div className="flex space-x-2">
                       <Button

@@ -6,33 +6,29 @@ import { HeroSection } from "../HeroSection/HeroSection";
 import { AgentsSection } from "../AgentsSection/AgentsSection";
 import { useMainMarketplacePage } from "./useMainMarketplacePage";
 import { FeaturedCreators } from "../FeaturedCreators/FeaturedCreators";
+import { MainMarketplacePageLoading } from "../MainMarketplacePageLoading";
+import { ErrorCard } from "@/components/molecules/ErrorCard/ErrorCard";
 
 export const MainMarkeplacePage = () => {
   const { featuredAgents, topAgents, featuredCreators, isLoading, hasError } =
     useMainMarketplacePage();
 
-  // FRONTEND-TODO : Add better Loading Skeletons
   if (isLoading) {
-    return (
-      <div className="mx-auto w-screen max-w-[1360px]">
-        <main className="px-4">
-          <div className="flex min-h-[400px] items-center justify-center">
-            <div className="text-lg">Loading...</div>
-          </div>
-        </main>
-      </div>
-    );
+    return <MainMarketplacePageLoading />;
   }
 
-  // FRONTEND-TODO : Add better Error UI
   if (hasError) {
     return (
       <div className="mx-auto w-screen max-w-[1360px]">
         <main className="px-4">
           <div className="flex min-h-[400px] items-center justify-center">
-            <div className="text-lg text-red-500">
-              Error loading marketplace data. Please try again later.
-            </div>
+            <ErrorCard
+              isSuccess={false}
+              responseError={{ message: "Failed to load marketplace data" }}
+              context="marketplace page"
+              onRetry={() => window.location.reload()}
+              className="w-full max-w-md"
+            />
           </div>
         </main>
       </div>

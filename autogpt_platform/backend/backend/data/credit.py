@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import stripe
 from prisma import Json
@@ -23,7 +23,6 @@ from pydantic import BaseModel
 
 from backend.data import db
 from backend.data.block_cost_config import BLOCK_COSTS
-from backend.data.cost import BlockCost
 from backend.data.model import (
     AutoTopUpConfig,
     RefundRequest,
@@ -34,12 +33,15 @@ from backend.data.model import (
 from backend.data.notifications import NotificationEventModel, RefundRequestData
 from backend.data.user import get_user_by_id, get_user_email_by_id
 from backend.notifications.notifications import queue_notification_async
-from backend.server.model import Pagination
 from backend.server.v2.admin.model import UserHistoryResponse
 from backend.util.exceptions import InsufficientBalanceError
 from backend.util.json import SafeJson
+from backend.util.models import Pagination
 from backend.util.retry import func_retry
 from backend.util.settings import Settings
+
+if TYPE_CHECKING:
+    from backend.data.block import Block, BlockCost
 
 settings = Settings()
 stripe.api_key = settings.secrets.stripe_api_key
@@ -286,11 +288,17 @@ class UserCreditBase(ABC):
         transaction = await CreditTransaction.prisma().find_first_or_raise(
             where={"transactionKey": transaction_key, "userId": user_id}
         )
-
         if transaction.isActive:
             return
 
         async with db.locked_transaction(f"usr_trx_{user_id}"):
+
+            transaction = await CreditTransaction.prisma().find_first_or_raise(
+                where={"transactionKey": transaction_key, "userId": user_id}
+            )
+            if transaction.isActive:
+                return
+
             user_balance, _ = await self._get_credits(user_id)
             await CreditTransaction.prisma().update(
                 where={
@@ -991,15 +999,19 @@ def get_user_credit_model() -> UserCreditBase:
     return UserCredit()
 
 
-def get_block_costs() -> dict[str, list[BlockCost]]:
+def get_block_costs() -> dict[str, list["BlockCost"]]:
     return {block().id: costs for block, costs in BLOCK_COSTS.items()}
+
+
+def get_block_cost(block: "Block") -> list["BlockCost"]:
+    return BLOCK_COSTS.get(block.__class__, [])
 
 
 async def get_stripe_customer_id(user_id: str) -> str:
     user = await get_user_by_id(user_id)
 
-    if user.stripeCustomerId:
-        return user.stripeCustomerId
+    if user.stripe_customer_id:
+        return user.stripe_customer_id
 
     customer = stripe.Customer.create(
         name=user.name or "",
@@ -1022,10 +1034,10 @@ async def set_auto_top_up(user_id: str, config: AutoTopUpConfig):
 async def get_auto_top_up(user_id: str) -> AutoTopUpConfig:
     user = await get_user_by_id(user_id)
 
-    if not user.topUpConfig:
+    if not user.top_up_config:
         return AutoTopUpConfig(threshold=0, amount=0)
 
-    return AutoTopUpConfig.model_validate(user.topUpConfig)
+    return AutoTopUpConfig.model_validate(user.top_up_config)
 
 
 async def admin_get_user_history(

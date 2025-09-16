@@ -15,8 +15,9 @@ from apscheduler.events import (
 from apscheduler.job import Job as JobObj
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.util import ZoneInfo
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import MetaData, create_engine
@@ -134,6 +135,7 @@ def execute_graph(**kwargs):
 
 async def _execute_graph(**kwargs):
     args = GraphExecutionJobArgs(**kwargs)
+    start_time = asyncio.get_event_loop().time()
     try:
         logger.info(f"Executing recurring job for graph #{args.graph_id}")
         graph_exec: GraphExecutionWithNodes = await execution_utils.add_graph_execution(
@@ -143,12 +145,22 @@ async def _execute_graph(**kwargs):
             inputs=args.input_data,
             graph_credentials_inputs=args.input_credentials,
         )
+        elapsed = asyncio.get_event_loop().time() - start_time
         logger.info(
-            f"Graph execution started with ID {graph_exec.id} for graph {args.graph_id}"
+            f"Graph execution started with ID {graph_exec.id} for graph {args.graph_id} "
+            f"(took {elapsed:.2f}s to create and publish)"
         )
+        if elapsed > 10:
+            logger.warning(
+                f"Graph execution {graph_exec.id} took {elapsed:.2f}s to create/publish - "
+                f"this is unusually slow and may indicate resource contention"
+            )
     except Exception as e:
-        # TODO: We need to communicate this error to the user somehow.
-        logger.error(f"Error executing graph {args.graph_id}: {e}")
+        elapsed = asyncio.get_event_loop().time() - start_time
+        logger.error(
+            f"Error executing graph {args.graph_id} after {elapsed:.2f}s: "
+            f"{type(e).__name__}: {e}"
+        )
 
 
 def cleanup_expired_files():
@@ -179,15 +191,22 @@ class GraphExecutionJobInfo(GraphExecutionJobArgs):
     id: str
     name: str
     next_run_time: str
+    timezone: str = Field(default="UTC", description="Timezone used for scheduling")
 
     @staticmethod
     def from_db(
         job_args: GraphExecutionJobArgs, job_obj: JobObj
     ) -> "GraphExecutionJobInfo":
+        # Extract timezone from the trigger if it's a CronTrigger
+        timezone_str = "UTC"
+        if hasattr(job_obj.trigger, "timezone"):
+            timezone_str = str(job_obj.trigger.timezone)
+
         return GraphExecutionJobInfo(
             id=job_obj.id,
             name=job_obj.name,
             next_run_time=job_obj.next_run_time.isoformat(),
+            timezone=timezone_str,
             **job_args.model_dump(),
         )
 
@@ -210,7 +229,7 @@ class NotificationJobInfo(NotificationJobArgs):
 
 
 class Scheduler(AppService):
-    scheduler: BlockingScheduler
+    scheduler: BackgroundScheduler
 
     def __init__(self, register_system_tasks: bool = True):
         self.register_system_tasks = register_system_tasks
@@ -223,20 +242,20 @@ class Scheduler(AppService):
     def db_pool_size(cls) -> int:
         return config.scheduler_db_pool_size
 
-    def health_check(self) -> str:
+    async def health_check(self) -> str:
         # Thread-safe health check with proper initialization handling
         if not hasattr(self, "scheduler"):
             raise UnhealthyServiceError("Scheduler is still initializing")
 
         # Check if we're in the middle of cleanup
         if self.cleaned_up:
-            return super().health_check()
+            return await super().health_check()
 
         # Normal operation - check if scheduler is running
         if not self.scheduler.running:
             raise UnhealthyServiceError("Scheduler is not running")
 
-        return super().health_check()
+        return await super().health_check()
 
     def run_service(self):
         load_dotenv()
@@ -256,9 +275,11 @@ class Scheduler(AppService):
         # Configure executors to limit concurrency without skipping jobs
         from apscheduler.executors.pool import ThreadPoolExecutor
 
-        self.scheduler = BlockingScheduler(
+        self.scheduler = BackgroundScheduler(
             executors={
-                "default": ThreadPoolExecutor(max_workers=10),  # Max 10 concurrent jobs
+                "default": ThreadPoolExecutor(
+                    max_workers=self.db_pool_size()
+                ),  # Match DB pool size to prevent resource contention
             },
             job_defaults={
                 "coalesce": True,  # Skip redundant missed jobs - just run the latest
@@ -290,13 +311,15 @@ class Scheduler(AppService):
                 Jobstores.WEEKLY_NOTIFICATIONS.value: MemoryJobStore(),
             },
             logger=apscheduler_logger,
+            timezone=ZoneInfo("UTC"),
         )
 
         if self.register_system_tasks:
             # Notification PROCESS WEEKLY SUMMARY
+            # Runs every Monday at 9 AM UTC
             self.scheduler.add_job(
                 process_weekly_summary,
-                CronTrigger.from_crontab("0 * * * *"),
+                CronTrigger.from_crontab("0 9 * * 1"),
                 id="process_weekly_summary",
                 kwargs={},
                 replace_existing=True,
@@ -348,6 +371,9 @@ class Scheduler(AppService):
         self.scheduler.add_listener(job_max_instances_listener, EVENT_JOB_MAX_INSTANCES)
         self.scheduler.start()
 
+        # Keep the service running since BackgroundScheduler doesn't block
+        super().run_service()
+
     def cleanup(self):
         super().cleanup()
         if self.scheduler:
@@ -376,6 +402,7 @@ class Scheduler(AppService):
         input_data: BlockInput,
         input_credentials: dict[str, CredentialsMetaInput],
         name: Optional[str] = None,
+        user_timezone: str | None = None,
     ) -> GraphExecutionJobInfo:
         # Validate the graph before scheduling to prevent runtime failures
         # We don't need the return value, just want the validation to run
@@ -387,6 +414,19 @@ class Scheduler(AppService):
                 graph_version=graph_version,
                 graph_credentials_inputs=input_credentials,
             )
+        )
+
+        # Use provided timezone or default to UTC
+        # Note: Timezone should be passed from the client to avoid database lookups
+        if not user_timezone:
+            user_timezone = "UTC"
+            logger.warning(
+                f"No timezone provided for user {user_id}, using UTC for scheduling. "
+                f"Client should pass user's timezone for correct scheduling."
+            )
+
+        logger.info(
+            f"Scheduling job for user {user_id} with timezone {user_timezone} (cron: {cron})"
         )
 
         job_args = GraphExecutionJobArgs(
@@ -401,12 +441,12 @@ class Scheduler(AppService):
             execute_graph,
             kwargs=job_args.model_dump(),
             name=name,
-            trigger=CronTrigger.from_crontab(cron),
+            trigger=CronTrigger.from_crontab(cron, timezone=user_timezone),
             jobstore=Jobstores.EXECUTION.value,
             replace_existing=True,
         )
         logger.info(
-            f"Added job {job.id} with cron schedule '{cron}' input data: {input_data}"
+            f"Added job {job.id} with cron schedule '{cron}' in timezone {user_timezone}, input data: {input_data}"
         )
         return GraphExecutionJobInfo.from_db(job_args, job)
 
